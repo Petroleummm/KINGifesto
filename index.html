@@ -1,0 +1,742 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>王牌宣言 - 測試版</title>
+<style>
+  /* ================= 全局變數與基礎設定 ================= */
+  :root{ 
+    --bg:#071022;       /* 主背景顏色：深藍色 */
+    --card:#fff;        /* 字體主要顏色：白色 */
+    --muted:#9aa4b2;     /* 次要與提示字顏色：灰色 */
+    --accent:#ffd166;    /* 強調提示顏色：金色 */
+    --panel:#0f1724;     /* 面板背景色 */
+  }
+  html,body{height:100%;margin:0;font-family:Segoe UI, Roboto, "Noto Sans TC", sans-serif;background:linear-gradient(180deg,var(--bg),#0b1230);color:var(--card)}
+  .app{max-width:980px;margin:20px auto;padding:18px;border-radius:10px;background:rgba(255,255,255,0.03);box-shadow:0 6px 30px rgba(2,6,23,0.6)}
+  header{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+  h1{font-size:20px;margin:0}
+  .top-row{display:flex;gap:12px;align-items:center}
+  
+  /* ================= 遊戲桌面（Board）區塊樣式 ================= */
+  .board{display:flex;gap:20px;align-items:center;justify-content:center;padding:18px;background:rgba(255,255,255,0.02);border-radius:8px;margin-bottom:12px}
+  .base-card{width:140px;height:200px;border-radius:8px;background:#fff;color:#000;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:28px;font-weight:700}
+  .declaration{font-size:26px;font-weight:800;color:var(--accent)}
+  .ai-status{display:flex;flex-direction:column;gap:8px;font-size:14px;color:var(--muted);align-items:center}
+  
+  /* ================= 手牌（Hand）區塊與卡牌樣式 ================= */
+  .hand{margin-top:12px;padding:12px;background:rgba(255,255,255,0.02);border-radius:8px;display:flex;flex-direction:column;gap:12px}
+  .hand-row{display:flex;gap:8px;flex-wrap:wrap}
+  /* 修正處：將原本寫錯的 colorvar(--card) 修正回正確的 CSS 語法 color: var(--card); */
+  .card-btn{padding:10px 12px;border-radius:6px;background:#14223a;color: var(--card);border:1px solid rgba(255,255,255,0.06);cursor:pointer;font-weight:700}
+  .card-btn.disabled{opacity:0.32;cursor:not-allowed} /* 灰色半透明：當卡牌不符合宣言時啟用 */
+  
+  /* ================= 按鈕與控制項樣式 ================= */
+  .controls{display:flex;gap:8px;align-items:center}
+  .declare-options{display:flex;gap:8px;flex-wrap:wrap}
+  .btn{padding:8px 12px;border-radius:6px;background:#1f6feb;border:none;color:white;cursor:pointer;font-weight:700}
+  .btn.ghost{background:transparent;border:1px solid rgba(255,255,255,0.06)}
+  .muted{color:var(--muted)}
+  .small{font-size:13px}
+  .center{display:flex;flex-direction:column;align-items:center;gap:8px}
+  .footer{margin-top:14px;font-size:13px;color:var(--muted)}
+  .draw-btn{background:#10b981}
+  
+  /* ================= 遊戲紀錄（Log）與狀態組件 ================= */
+  .log{max-height:200px;overflow:auto;padding:8px;background:rgba(255,255,255,0.02);border-radius:6px;font-size:13px;color:var(--muted)}
+  .status-row{display:flex;gap:12px;align-items:center}
+  .badge{background:rgba(255,255,255,0.03);padding:6px 8px;border-radius:6px}
+  
+  /* ================= 四種花色的專屬顏色配對 ================= */
+  .suit{font-weight:700;margin-left:2px}
+  .suit-club{color:#0B0BF4}    /* 梅花：藍色 */
+  .suit-spade{color:#F48B0B}   /* 黑桃：橘色 */
+  .suit-diamond{color:#09C823} /* 磚塊：綠色 */
+  .suit-heart{color:#DE1212}   /* 紅心：紅色 */
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <h1>王牌宣言 — 測試版（玩家 vs 2 AI）</h1>
+    <div class="muted small">核心規則完整實作：特殊點數順序與抽牌同規則</div>
+  </header>
+
+  <section class="board">
+    <div class="ai-status" id="ai-left">
+      <div><strong>AI 1</strong></div>
+      <div class="small">手牌數：<span id="ai1-count">10</span></div>
+      <div class="small muted" id="ai1-last">上次動作：-</div>
+    </div>
+
+    <div class="center" style="width:360px">
+      <div class="base-card" id="base-card">--</div>
+      <div class="declaration" id="declaration-state">宣言：-</div>
+      <div class="controls" id="declare-controls" style="margin-top:8px"></div>
+      <div class="status-row" style="margin-top:8px">
+        <div class="badge">目前回合：<span id="current-player">-</span></div>
+        <div class="badge">牌庫剩餘：<span id="deck-count">0</span></div>
+      </div>
+    </div>
+
+    <div class="ai-status" id="ai-right">
+      <div><strong>AI 2</strong></div>
+      <div class="small">手牌數：<span id="ai2-count">10</span></div>
+      <div class="small muted" id="ai2-last">上次動作：-</div>
+    </div>
+  </section>
+
+  <section class="hand">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <div style="display:flex;align-items:center;gap:8px">
+        <strong>你的手牌</strong>
+        <!-- 修正處：將顏色代碼 color:#FFFFFF(--accent) 修正為純白色 #FFFFFF -->
+        <span class="badge" id="player-hand-count" style="font-size:12px;color:#FFFFFF">10張</span>
+      </div>
+      <div class="muted small" id="hand-tip">提示：選取符合宣言的牌出牌。</div>
+    </div>
+
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px">
+      <button class="btn ghost" id="sort-by-size">按大小排序</button>
+      <button class="btn ghost" id="sort-by-suit">按花色排序</button>
+    </div>
+
+    <div class="hand-row" id="player-hand"></div>
+
+    <div style="display:flex;gap:8px;align-items:center;margin-top:10px">
+      <button class="btn draw-btn" id="draw-button" style="display:none">抽一張牌</button>
+      <button class="btn ghost" id="play-drawn-button" style="display:none">立即打出抽到的牌</button>
+      <div class="muted small" id="draw-info"></div>
+    </div>
+  </section>
+
+  <section style="margin-top:12px;display:flex;gap:12px">
+    <div style="flex:1">
+      <div><strong>遊戲紀錄</strong></div>
+      <div class="log" id="log"></div>
+    </div>
+    <div style="width:220px">
+      <div><strong>操作</strong></div>
+      <div style="margin-top:8px">
+        <button class="btn ghost" id="restart">重新開始</button>
+      </div>
+      <div class="footer">數字強度：2 > A > K > Q > J > 10 > 9 > 8 > 7 > 6 > 5 > 4 > 3。AI 抽牌規則與玩家相同。</div>
+    </div>
+  </section>
+</div>
+
+<script>
+(function(){
+  /* ================= 遊戲核心撲克牌常量定義 ================= */
+  const SUITS = ['♠','♥','♦','♣']; // 四種花色陣列
+  const RANKS = [2,3,4,5,6,7,8,9,10,11,12,13,14]; // 原始卡牌點數 (11=J, 12=Q, 13=K, 14=A)
+  const SUIT_ORDER = { '♠': 4, '♥': 3, '♦': 2, '♣': 1 }; // 當數字相同時，比花色大小的權重
+
+  /**
+   * 建立全新一副未洗牌的 52 張撲克牌
+   * @returns {Array} 包含所有卡牌物件的陣列
+   */
+  function makeDeck(){
+    const d=[];
+    for(const r of RANKS) for(const s of SUITS) d.push({rank:r,suit:s});
+    return d;
+  }
+
+  /**
+   * Fisher-Yates 洗牌演算法，將牌堆隨機打亂
+   * @param {Array} arr - 要打亂的撲克牌陣列
+   * @returns {Array} 洗好牌後的陣列
+   */
+  function shuffle(arr){
+    for(let i=arr.length-1;i>0;i--){
+      const j=Math.floor(Math.random()*(i+1));
+      [arr[i],arr[j]]=[arr[j],arr[i]];
+    }
+    return arr;
+  }
+
+  /**
+   * 轉換花色符號為 CSS 樣式名稱
+   * @param {string} suit - 撲克牌花色符號 
+   * @returns {string} 對應的 CSS 類別後綴
+   */
+  function suitClass(suit){
+    switch(suit){
+      case '♣': return 'club';
+      case '♠': return 'spade';
+      case '♦': return 'diamond';
+      case '♥': return 'heart';
+      default: return '';
+    }
+  }
+
+  /**
+   * 將卡牌轉為純文字格式（用於紀錄 Log 等純文字區域）
+   * @param {Object} c - 卡牌物件
+   * @returns {string} 例如 "A♠", "10♥"
+   */
+  function cardText(c){
+    const map={11:'J',12:'Q',13:'K',14:'A'};
+    return (map[c.rank]||c.rank)+c.suit;
+  }
+
+  /**
+   * 將卡牌轉換成包含 HTML 樣式標籤的格式（用於網頁元件渲染）
+   * @param {Object} c - 卡牌物件
+   * @returns {string} 帶有獨立花色變色 span 的 HTML 字串
+   */
+  function cardLabel(c){
+    const map={11:'J',12:'Q',13:'K',14:'A'};
+    const rankText = map[c.rank] || c.rank;
+    return `${rankText}<span class="suit suit-${suitClass(c.suit)}">${c.suit}</span>`;
+  }
+
+  /**
+   * 特殊核心規則：數字強度權重計算。
+   * 遊戲設定數字 2 最大，其餘則 A > K > Q ... > 3
+   * @param {number} rank - 卡牌原始點數
+   * @returns {number} 換算後的真實強度等級值 (3轉為1最小，2轉為13最大)
+   */
+  function rankStrength(rank){
+    if(rank===2) return 13;
+    return rank - 2;
+  }
+
+  /**
+   * 排序判定：大至小排列（點數優先，花色次之）
+   */
+  function compareCardsBySize(a,b){
+    const rankCompare = rankStrength(b.rank) - rankStrength(a.rank);
+    if(rankCompare !== 0) return rankCompare;
+    return SUIT_ORDER[b.suit] - SUIT_ORDER[a.suit];
+  }
+
+  /**
+   * 排序判定：花色優先排列（花色權重優先，點數大至小次之）
+   */
+  function compareCardsBySuit(a,b){
+    const suitCompare = SUIT_ORDER[b.suit] - SUIT_ORDER[a.suit];
+    if(suitCompare !== 0) return suitCompare;
+    return rankStrength(b.rank) - rankStrength(a.rank);
+  }
+
+  /* ================= 全局 DOM 網頁元件綁定 ================= */
+  const playerHandCountEl = document.getElementById('player-hand-count');
+  const baseCardEl = document.getElementById('base-card');
+  const declEl = document.getElementById('declaration-state');
+  const declareControls = document.getElementById('declare-controls');
+  const playerHandEl = document.getElementById('player-hand');
+  const ai1CountEl = document.getElementById('ai1-count');
+  const ai2CountEl = document.getElementById('ai2-count');
+  const ai1LastEl = document.getElementById('ai1-last');
+  const ai2LastEl = document.getElementById('ai2-last');
+  const currentPlayerEl = document.getElementById('current-player');
+  const drawButton = document.getElementById('draw-button');
+  const playDrawnButton = document.getElementById('play-drawn-button');
+  const drawInfo = document.getElementById('draw-info');
+  const logEl = document.getElementById('log');
+  const restartBtn = document.getElementById('restart');
+  const deckCountEl = document.getElementById('deck-count');
+  const handTipEl = document.getElementById('hand-tip');
+  const sortBySizeBtn = document.getElementById('sort-by-size');
+  const sortBySuitBtn = document.getElementById('sort-by-suit');
+
+  /* ================= 遊戲運行狀態變數 ================= */
+  let deck=[];               // 目前牌庫（剩餘牌堆）
+  let players=[];            // 三位玩家的手牌二維陣列 [0]: 玩家, [1]: AI 1, [2]: AI 2
+  let baseCard=null;         // 當前桌面上的底牌卡牌物件
+  let currentPlayer=0;       // 目前輪到的玩家編號 (0:玩家, 1:AI 1, 2:AI 2)
+  let declaration=null;      // 目前生效的宣告狀態物件 {type: 'higher'|'lower'|'same-suit'|'same-rank'}
+  let initialStarter=null;    // 遊戲開局時獲得首發權的玩家編號
+  let lastDrawnByPlayer=null;// 玩家剛剛抽到且還未決定是否打出的備份牌物件
+  let lastDrawnByAI = {1:null,2:null}; // 儲存 AI 剛剛抽起來的牌，用以核對是否即時打出
+  let gameOver=false;        // 遊戲是否已分出勝負並終結
+  let lastSuccessfulPlayer = -1; // 上一個「成功出牌」的玩家編號（用於卡死清場時決定誰有新宣言權）
+
+  /**
+   * 遊戲歷程訊息推送紀錄
+   * @param {string} msg - 欲插入紀錄列表的 HTML 或文字內容
+   */
+  function log(msg){
+    const p=document.createElement('div');
+    p.innerHTML=msg;
+    logEl.prepend(p);
+  }
+
+  /**
+   * 遊戲剛開局時，尋找誰手上有點數最小的卡牌來決定首發權
+   * 點數順序為 3 最小，依序往上找，2 最大故排在最後。
+   * @returns {number} 擁有最小牌的玩家/AI 編號 (0~2)
+   */
+  function findStarter(){
+    const order = [3,4,5,6,7,8,9,10,11,12,13,14,2];
+    for(const rank of order){
+      for(let pid=0; pid<3; pid++){
+        if(players[pid].some(c=>c.rank===rank)) return pid;
+      }
+    }
+    return 0; // 若沒比出結果，預設由玩家 0 號首發
+  }
+
+  /**
+   * 轉換宣告字串代碼為易讀的繁體中文名稱
+   * @param {string} t - 宣告代碼
+   * @returns {string} 繁體中文名
+   */
+  function declToText(t){
+    if(!t) return '-';
+    return {
+      'higher':'比大',
+      'lower':'比小',
+      'same-suit':'同花色',
+      'same-rank':'同數字'
+    }[t] || t;
+  }
+
+  /**
+   * 核心判定裁判：判定單張卡牌是否符合目前的王牌宣言條件
+   * @param {Object} card - 要檢驗的手牌物件
+   * @returns {boolean} 是否允許打出
+   */
+  function isPlayable(card){
+    if(!declaration || !baseCard) return true; // 若無宣言或底牌（如開局首發），允許打出任意牌
+    const s1 = rankStrength(card.rank);
+    const sBase = rankStrength(baseCard.rank);
+    switch(declaration.type){
+      case 'higher': return s1 > sBase;                  // 比大：點數權重必須大於底牌
+      case 'lower': return s1 < sBase;                   // 比小：點數權重必須小於底牌
+      case 'same-suit': return card.suit === baseCard.suit; // 同花色：花色必須與底牌完全一樣
+      case 'same-rank': return card.rank === baseCard.rank; // 同數字：原始點數必須與底牌完全一樣
+      default: return false;
+    }
+  }
+
+  /**
+   * 檢查某位玩家的手牌陣列中，是否至少存在一張符合宣言、可打出的牌
+   * @param {number} pid - 玩家/AI 編號 
+   * @returns {boolean} 有無可出牌
+   */
+  function playerHasPlayable(pid){
+    return players[pid].some(c => isPlayable(c));
+  }
+
+  /**
+   * AI 決策邏輯：當需要重新宣告時，計算目前手牌符合哪種規則的數量最多，選擇最佳宣言
+   * @param {number} pid - 目前要做宣言的 AI 編號
+   * @returns {string} 計算後最有利的宣言代碼
+   */
+  function chooseAIDeclaration(pid){
+    const baseStrength = rankStrength(baseCard.rank);
+    const counts = { higher: 0, lower: 0, 'same-suit': 0, 'same-rank': 0 };
+
+    // 分門別類統計目前手牌中，各種宣言下各自有多少張牌能打出去
+    players[pid].forEach(card => {
+      const strength = rankStrength(card.rank);
+      if(strength > baseStrength) counts.higher++;
+      if(strength < baseStrength) counts.lower++;
+      if(card.suit === baseCard.suit) counts['same-suit']++;
+      if(card.rank === baseCard.rank) counts['same-rank']++;
+    });
+
+    const options = ['same-rank', 'same-suit', 'higher', 'lower'];
+    let bestType = options[0];
+    let bestCount = counts[bestType];
+
+    // 挑選出可出牌張數最多（最有利）的宣告規則
+    options.forEach(type => {
+      if(counts[type] > bestCount){
+        bestCount = counts[type];
+        bestType = type;
+      }
+    });
+
+    // 防呆：若所有宣言的期望值都是 0 張，則進行後備處理隨便挑一個
+    if(bestCount === 0){
+      const fallback = ['higher', 'lower', 'same-suit', 'same-rank'];
+      bestType = fallback.reduce((best, type) => counts[type] > counts[best] ? type : best, fallback[0]);
+    }
+
+    return bestType;
+  }
+
+  /**
+   * 重新宣告程序（全場無牌可出，觸發強制清場重新宣告）
+   */
+  function triggerReDeclaration(){
+    if(gameOver) return;
+
+    // 根據規則：上一個「成功打出牌（造成卡死清場）」的玩家獲得新一輪的王牌宣言特權
+    const reclaimer = lastSuccessfulPlayer >= 0 ? lastSuccessfulPlayer : currentPlayer;
+
+    log('🚫 其餘玩家皆無牌可出');
+    log('👑 重新宣言由 ' + (reclaimer === 0 ? '玩家' : ('AI ' + reclaimer)) + ' 獲得！');
+
+    // 清空前一輪的王牌宣言，拔除舊 UI，並將回合控制權強行切換給獲得特權的人
+    declaration = null;
+    declareControls.innerHTML = '';
+    currentPlayer = reclaimer; 
+    
+    // 清除全場剛抽牌的快取標記，確保新的一輪大家的抽牌救援權益完整刷新
+    lastDrawnByPlayer = null;
+    lastDrawnByAI = {1: null, 2: null};
+    
+    updateUI();
+
+    if(reclaimer === 0){
+      promptPlayerDeclaration(); // 如果是玩家獲得權利，生成並彈出四個按鈕供點選
+    } else {
+      // 如果是 AI 獲得特權，由 AI 呼叫算法選擇最佳宣告並直接發動出牌
+      const pick = chooseAIDeclaration(reclaimer);
+      declaration = { type: pick };
+      log('AI ' + reclaimer + ' 重新選擇宣言：' + declToText(declaration.type));
+      
+      // 重新設定宣告完畢，由該 AI 直接在本回合發動攻擊，隨後依序輪替
+      setTimeout(() => {
+        if(gameOver) return;
+        updateUI();
+        runTurn();
+      }, 700);
+    }
+  }
+
+  /**
+   * 刷新整個遊戲畫面的主控函數（負責即時同步資料到前端網頁元件）
+   */
+  function updateUI(){
+    baseCardEl.innerHTML = baseCard ? cardLabel(baseCard) : '--';
+    declEl.textContent = '宣言：' + (declaration ? declToText(declaration.type) : '-');
+    
+    // 新增下面這行：每次畫面更新時，重新計算玩家手牌長度並顯示
+    playerHandCountEl.textContent = players[0].length + '張';
+    ai1CountEl.textContent = players[1].length;
+    ai2CountEl.textContent = players[2].length;
+    currentPlayerEl.textContent = currentPlayer===0 ? '玩家' : ('AI ' + currentPlayer);
+    deckCountEl.textContent = deck.length;
+    
+    renderPlayerHand(); // 單獨重繪玩家的手牌按鈕
+
+    // 控制「抽牌」按鈕與「立即打出抽到的牌」按鈕的顯示/隱藏隱現邏輯
+    drawButton.style.display = (currentPlayer===0 && !gameOver && !playerHasPlayable(0)) ? 'inline-block' : 'none';
+    playDrawnButton.style.display = (currentPlayer===0 && lastDrawnByPlayer && isPlayable(lastDrawnByPlayer)) ? 'inline-block' : 'none';
+    
+    drawInfo.textContent = '';
+    
+    // 即時切換頂部灰色操作提示文字
+    if(currentPlayer===0){
+      if(!declaration) handTipEl.textContent = '等候宣言設定';
+      else if(playerHasPlayable(0)) handTipEl.textContent = '請點選符合宣言的牌出牌';
+      else handTipEl.textContent = '無可出牌，請抽牌';
+    } else {
+      handTipEl.textContent = 'AI 運行中...';
+    }
+  }
+
+  /**
+   * 動態渲染生成玩家手牌按鈕，並綁定專屬點擊監聽事件
+   */
+  function renderPlayerHand(){
+    playerHandEl.innerHTML = '';
+    players[0].forEach((c, idx) => {
+      const btn = document.createElement('button');
+      btn.className = 'card-btn';
+      btn.innerHTML = cardLabel(c);
+      
+      // 當遊戲結束、不為玩家回合、或是該卡牌不符合目前王牌宣言時，按鈕會呈現半透明且無法互動
+      if(gameOver || currentPlayer!==0 || !isPlayable(c)) btn.classList.add('disabled');
+      
+      btn.onclick = () => {
+        if(gameOver || currentPlayer!==0) return;
+        if(!isPlayable(c)){ alert('該牌不符合當前宣言，不能出牌'); return; }
+        playCard(0, idx); // 符合條件，執行出牌程序
+      };
+      playerHandEl.appendChild(btn);
+    });
+  }
+
+  /**
+   * 出牌控制程序（不論是玩家還是 AI，只要出牌都走這裡）
+   * @param {number} pid - 出牌者的編號 (0~2)
+   * @param {number} cardIdx - 卡牌在該手牌陣列中的索引位置
+   */
+  function playCard(pid, cardIdx){
+    const card = players[pid].splice(cardIdx,1)[0]; // 自手牌陣列中移除
+    baseCard = card; // 更新桌面中央底牌
+    lastSuccessfulPlayer = pid; // 標註最後成功出牌的人是誰
+    
+    log((pid===0 ? '玩家' : ('AI '+pid)) + ' 出牌：' + cardLabel(card));
+    if(pid===1) ai1LastEl.innerHTML = '出：' + cardLabel(card);
+    if(pid===2) ai2LastEl.innerHTML = '出：' + cardLabel(card);
+    
+    // 出牌成功後，清空剛剛產生的抽牌暫存，救援階段順利結束
+    lastDrawnByPlayer = null;
+    lastDrawnByAI[1] = lastDrawnByAI[1] && (lastDrawnByAI[1]===card ? null : lastDrawnByAI[1]);
+    lastDrawnByAI[2] = lastDrawnByAI[2] && (lastDrawnByAI[2]===card ? null : lastDrawnByAI[2]);
+    
+    checkWin(pid); // 檢查手牌是否清空，判定獲勝
+
+    if(!gameOver){
+      currentPlayer = (pid + 1) % 3; // 順時針傳遞給下一位玩家
+      updateUI();
+      setTimeout(runTurn, 600); // 延時啟動下一位玩家的回合
+    }
+  }
+
+  /**
+   * 獲勝與遊戲終結檢查
+   */
+  function checkWin(pid){
+    if(players[pid].length === 0){
+      gameOver = true;
+      log((pid===0 ? '玩家' : ('AI '+pid)) + ' 獲勝！');
+      setTimeout(()=>{ alert((pid===0 ? '你' : ('AI '+pid)) + ' 獲勝！遊戲結束。'); }, 50);
+    }
+  }
+
+  /**
+   * AI 單回合運作自動化機關
+   * @param {number} pid - 當前執行的 AI 編號 (1 或 2)
+   */
+  function aiTurn(pid){
+    if(gameOver) return;
+
+    // 篩選出 AI 目前手牌中所有可以合法打出的卡牌清單
+    const playable = players[pid].map((c,i)=>({c,i})).filter(x => isPlayable(x.c));
+    if(playable.length > 0){
+      // 策略一：若手上有牌可出，目前版本為從符合條件的牌組中隨機抽一張打出
+      const pick = playable[Math.floor(Math.random()*playable.length)];
+      playCard(pid, pick.i);
+      return;
+    }
+
+    // 情況 A：當手上沒牌可出，且牌庫此時剛好空了，AI 無法抽牌進行救援，直接強制跳過回合
+    if(deck.length === 0){
+      log('牌堆無牌，AI ' + pid + ' 無法抽牌，跳過回合');
+      if(pid===1) ai1LastEl.innerHTML = '跳過(無牌)';
+      if(pid===2) ai2LastEl.innerHTML = '跳過(無牌)';
+      
+      const nextPlayer = (pid + 1) % 3;
+      currentPlayer = nextPlayer;
+      updateUI();
+      
+      // 判定死結：若跳過後，下一個人剛好是最後成功出牌者（繞一圈沒人能接龍），觸發清場重新宣告
+      if(nextPlayer === lastSuccessfulPlayer || (lastSuccessfulPlayer === -1 && nextPlayer === initialStarter)){
+        triggerReDeclaration();
+      } else {
+        setTimeout(runTurn, 300);
+      }
+      return;
+    }
+
+    // 情況 B：手上沒牌可出，且牌庫還有剩餘牌，強制抽一張卡牌救援
+    const c = deck.pop();
+    players[pid].push(c);
+    lastDrawnByAI[pid] = c;
+    log('AI ' + pid + ' 抽牌：' + cardLabel(c));
+
+    if(isPlayable(c)){
+      // 抽出來的牌如果剛好可以出，根據官方規則必須立即把這張牌丟到桌面上
+      log('AI ' + pid + ' 抽到可出牌，立即出牌：' + cardLabel(c));
+      const idx = players[pid].findIndex(x => x === c);
+      if(idx >= 0) playCard(pid, idx);
+    } else {
+      // 抽牌後依舊不符合宣言，救援失敗，跳過回合，輪到下一個人
+      log('AI ' + pid + ' 抽到不符合宣言，回合跳過');
+      if(pid===1) ai1LastEl.innerHTML = '抽牌後跳過';
+      if(pid===2) ai2LastEl.innerHTML = '抽牌後跳過';
+      
+      const nextPlayer = (pid + 1) % 3;
+      currentPlayer = nextPlayer;
+      updateUI();
+
+      // 同理，若繞了一圈依然沒有任何人解開這個殘局，強制觸發清場宣告
+      if(nextPlayer === lastSuccessfulPlayer || (lastSuccessfulPlayer === -1 && nextPlayer === initialStarter)){
+        triggerReDeclaration();
+      } else {
+        setTimeout(runTurn, 500);
+      }
+    }
+  }
+
+  /**
+   * 核心狀態輪迴引擎：負責調度目前各回合的控制權分配
+   */
+  function runTurn(){
+    if(gameOver) return;
+    updateUI();
+    
+    if(!declaration){
+      return; // 若當前無任何宣言，暫停引擎運作，等待玩家點擊或 AI 做宣言設定
+    }
+    
+    if(currentPlayer === 0){
+      // 輪到玩家：更新畫面，等待玩家點擊卡牌按鈕或抽牌按鈕觸發事件
+      if(playerHasPlayable(0)){
+        updateUI();
+      } else {
+        updateUI();
+      }
+    } else {
+      // 輪到 AI：自動延時發動 AI 自動化決策
+      setTimeout(()=>aiTurn(currentPlayer), 600);
+    }
+  }
+
+  /* ================= 玩家主動點擊操作事件監聽器 ================= */
+
+  // 1. 玩家抽牌按鈕點擊事件
+  drawButton.addEventListener('click', ()=>{
+    if(gameOver || currentPlayer !== 0) return;
+
+    // 如果牌庫乾涸，玩家無法抽牌，強制跳過玩家回合
+    if(deck.length === 0){
+      log('牌堆已無牌，玩家無法抽牌，跳過回合');
+      currentPlayer = 1; // 交給下一個 AI 1
+      updateUI();
+      if(1 === lastSuccessfulPlayer || (lastSuccessfulPlayer === -1 && 1 === initialStarter)){
+        triggerReDeclaration();
+      } else {
+        setTimeout(runTurn, 300);
+      }
+      return;
+    }
+
+    // 執行抽牌
+    const c = deck.pop();
+    players[0].push(c);
+    lastDrawnByPlayer = c; // 快取這張剛抽到的牌
+    log('玩家 抽牌：' + cardLabel(c));
+
+    if(isPlayable(c)){
+      // 抽到可出牌：解鎖特殊提示資訊，玩家可自由選擇手動點或用快捷鍵打出
+      drawInfo.innerHTML = '抽到 ' + cardLabel(c) + '，符合宣言，可立即打出或手動點擊該牌。';
+      updateUI();
+    } else {
+      // 抽到垃圾牌無法救援：顯示提示，並在 0.7 秒後自動強行跳過回合
+      drawInfo.innerHTML = '抽到 ' + cardLabel(c) + '，不符合宣言，回合自動跳過。';
+      updateUI();
+      lastDrawnByPlayer = null; // 清空快取
+
+      setTimeout(()=>{
+        currentPlayer = 1;
+        updateUI();
+        if(1 === lastSuccessfulPlayer || (lastSuccessfulPlayer === -1 && 1 === initialStarter)){
+          triggerReDeclaration();
+        } else {
+          runTurn();
+        }
+      }, 700);
+    }
+  });
+
+  // 2. 玩家「立即打出抽到的牌」便捷按鈕
+  playDrawnButton.addEventListener('click', ()=>{
+    if(gameOver || currentPlayer!==0 || !lastDrawnByPlayer) return;
+    if(!isPlayable(lastDrawnByPlayer)){ alert('抽到的牌不符合宣言，無法打出'); return; }
+    const idx = players[0].findIndex(x => x === lastDrawnByPlayer);
+    if(idx >= 0) playCard(0, idx);
+  });
+
+  // 3. 玩家卡牌排序：大至小
+  sortBySizeBtn.addEventListener('click', ()=>{
+    if(gameOver) return;
+    players[0].sort(compareCardsBySize);
+    updateUI();
+  });
+
+  // 4. 玩家卡牌排序：花色優先
+  sortBySuitBtn.addEventListener('click', ()=>{
+    if(gameOver) return;
+    players[0].sort(compareCardsBySuit);
+    updateUI();
+  });
+
+  /**
+   * 當玩家搶到/獲得首發宣言權利時，在畫面中央动态插入四個宣告功能按鈕
+   */
+  function promptPlayerDeclaration(){
+    declareControls.innerHTML = '';
+    const wrap = document.createElement('div');
+    wrap.className = 'declare-options';
+    const labels = ['比大','比小','同花色','同數字'];
+    
+    labels.forEach((label, idx)=>{
+      const btn = document.createElement('button');
+      btn.className = 'btn';
+      btn.textContent = label;
+      btn.onclick = ()=> {
+        const mapping = {0:'higher',1:'lower',2:'same-suit',3:'same-rank'};
+        declaration = { type: mapping[idx] }; // 設定新王牌宣言生效
+        log('玩家 選擇宣言：' + label);
+        declareControls.innerHTML = ''; // 清空中央宣告按鈕選單
+        currentPlayer = 0; // 首發由選擇者本人開始出牌
+        updateUI();
+        runTurn(); // 啟動主流程
+      };
+      wrap.appendChild(btn);
+    });
+    declareControls.appendChild(wrap);
+    
+    const tip = document.createElement('div');
+    tip.className = 'muted small';
+    tip.style.marginTop = '8px';
+    tip.textContent = '你擁有首發權，請選擇一個宣言開始出牌。';
+    declareControls.appendChild(tip);
+  }
+
+  /**
+   * 遊戲初始化與派牌開局核心
+   */
+  function startGame(){
+    deck = shuffle(makeDeck()); // 生成並洗好一副全新的牌
+    players = [[],[],[]];      // 初始化三個陣列空間
+    
+    // 依序分發給 玩家、AI 1、AI 2 各 10 張初始手牌
+    for(let i=0;i<10;i++){
+      players[0].push(deck.pop());
+      players[1].push(deck.pop());
+      players[2].push(deck.pop());
+    }
+    
+    baseCard = deck.pop(); // 掀開牌庫頂部第一張作為初始底牌
+    declaration = null;    // 初始狀態無任何王牌宣言
+    lastDrawnByPlayer = null;
+    lastDrawnByAI = {1:null,2:null};
+    gameOver = false;
+    lastSuccessfulPlayer = -1;
+    logEl.innerHTML = ''; // 清空上一局舊日誌
+    
+    log('新遊戲開始');
+    log('初始底牌：' + cardLabel(baseCard));
+    
+    initialStarter = findStarter(); // 檢查全場誰手上的卡牌最接近數字 3 獲得首發
+    log('首發擁有者：' + (initialStarter===0 ? '玩家' : ('AI ' + initialStarter)));
+    
+    if(initialStarter === 0){
+      // 若玩家首發，呼叫彈出宣告按鈕並靜候點選
+      promptPlayerDeclaration();
+      currentPlayer = 0;
+      updateUI();
+    } else {
+      // 若 AI 首發，目前版本為完全隨機在四個宣言中瞎選一個
+      const choices = ['higher','lower','same-suit','same-rank'];
+      const pick = choices[Math.floor(Math.random()*choices.length)];
+      declaration = { type: pick };
+      log('AI ' + initialStarter + ' 選擇宣言：' + declToText(declaration.type));
+      currentPlayer = initialStarter; // 由該 AI 首發出牌
+      declareControls.innerHTML = '';
+      updateUI();
+      setTimeout(runTurn, 600); // 延時發動出牌輪迴
+    }
+    updateUI();
+  }
+
+  // 綁定重新開始點擊事件
+  restartBtn.addEventListener('click', ()=>{ startGame(); });
+
+  // 網頁加載完畢後，預設直接自動呼叫執行開局
+  startGame();
+})();
+</script>
+</body>
+</html>
